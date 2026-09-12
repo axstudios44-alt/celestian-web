@@ -191,6 +191,24 @@
     outline: none;
     max-width: 220px;
   }
+
+  .boton-activacion {
+    background: var(--panel);
+    color: var(--text-dim);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    margin-left: 8px;
+  }
+
+  .boton-activacion.activo {
+    background: var(--amber);
+    color: #001625;
+    border-color: var(--amber);
+  }
 </style>
 </head>
 <body>
@@ -210,6 +228,7 @@
 
   <div class="selector-voz">
     <select id="selectorVoz"></select>
+    <button id="botonActivacionVoz" class="boton-activacion">Activar por voz</button>
   </div>
 
   <div class="orb-wrap" id="orb">
@@ -358,7 +377,10 @@ async function enviarTexto() {
   const texto = input.value.trim();
   if (!texto) return;
   input.value = "";
+  await enviarTextoDirecto(texto);
+}
 
+async function enviarTextoDirecto(texto) {
   setEstado("thinking", "PENSANDO");
   document.getElementById("respuesta").textContent = "";
 
@@ -412,11 +434,93 @@ function hablar(base64) {
     return;
   }
   setEstado("speaking", "HABLANDO");
+  hablandoAhora = true;
+  pausarEscuchaContinua();
+
   const audio = document.getElementById("audioRespuesta");
   audio.src = "data:audio/mp3;base64," + base64;
-  audio.onended = () => setEstado("idle", "EN ESPERA");
+  audio.onended = () => {
+    setEstado("idle", "EN ESPERA");
+    hablandoAhora = false;
+    reanudarEscuchaContinua();
+  };
   audio.play();
 }
+
+// --- Activacion por voz (palabra clave "Celestian") ---
+const PALABRA_ACTIVACION = "celestian";
+let reconocimientoContinuo = null;
+let activacionPorVoz = false;
+let hablandoAhora = false;
+
+function crearReconocimiento() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  const rec = new SpeechRecognition();
+  rec.lang = "es-ES";
+  rec.continuous = true;
+  rec.interimResults = false;
+
+  rec.onresult = (event) => {
+    const ultimo = event.results[event.results.length - 1];
+    const texto = ultimo[0].transcript.trim().toLowerCase();
+    const idx = texto.indexOf(PALABRA_ACTIVACION);
+    if (idx === -1) return;
+
+    const comando = texto.slice(idx + PALABRA_ACTIVACION.length).trim();
+    if (comando) {
+      enviarTextoDirecto(comando);
+    } else {
+      setEstado("listening", "TE ESCUCHO");
+    }
+  };
+
+  rec.onend = () => {
+    if (activacionPorVoz && !hablandoAhora) {
+      try { rec.start(); } catch (e) {}
+    }
+  };
+
+  rec.onerror = (e) => console.error("Reconocimiento:", e.error);
+
+  return rec;
+}
+
+function pausarEscuchaContinua() {
+  if (reconocimientoContinuo) {
+    try { reconocimientoContinuo.stop(); } catch (e) {}
+  }
+}
+
+function reanudarEscuchaContinua() {
+  if (activacionPorVoz && reconocimientoContinuo) {
+    try { reconocimientoContinuo.start(); } catch (e) {}
+  }
+}
+
+document.getElementById("botonActivacionVoz").addEventListener("click", () => {
+  activacionPorVoz = !activacionPorVoz;
+  const boton = document.getElementById("botonActivacionVoz");
+
+  if (activacionPorVoz) {
+    reconocimientoContinuo = crearReconocimiento();
+    if (!reconocimientoContinuo) {
+      alert("Tu navegador no soporta activación por voz. Usa Chrome u Opera.");
+      activacionPorVoz = false;
+      return;
+    }
+    reconocimientoContinuo.start();
+    boton.textContent = 'Escuchando "Celestian"...';
+    boton.classList.add("activo");
+    setEstado("idle", "EN ESPERA (di 'Celestian')");
+  } else {
+    pausarEscuchaContinua();
+    boton.textContent = "Activar por voz";
+    boton.classList.remove("activo");
+    setEstado("idle", "EN ESPERA");
+  }
+});
 
 // --- Voces disponibles ---
 async function cargarVoces() {

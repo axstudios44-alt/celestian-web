@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Celestian</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="theme-color" content="#0a0b0e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Celestian">
+<style>
+  :root {
+    --bg: #0a0b0e;
+    --panel: #0f1116;
+    --line: #1c1f27;
+    --text: #f2f0eb;
+    --text-dim: #7c8290;
+    --amber: #3aa8ff;
+    --amber-soft: #9fd8ff;
+    --gold: #5ec8ff;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Space Grotesk", "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+
+  .mono {
+    font-family: "JetBrains Mono", "Courier New", monospace;
+  }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stats {
+    position: absolute;
+    top: 28px;
+    right: 32px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.9;
+  }
+
+  .stats .valor {
+    color: var(--amber-soft);
+    margin-left: 8px;
+  }
+
+  .historial {
+    position: absolute;
+    top: 28px;
+    left: 32px;
+    width: 220px;
+    font-size: 11px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    max-height: 60vh;
+    overflow: hidden;
+  }
+
+  .historial .titulo {
+    color: var(--text);
+    font-size: 12px;
+    margin-bottom: 10px;
+    letter-spacing: 0.02em;
+  }
+
+  .historial .linea {
+    opacity: 0.7;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  canvas#orbCanvas {
+    display: block;
+  }
+
+  .orb-wrap {
+    position: relative;
+    width: 320px;
+    height: 320px;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .respuesta {
+    position: absolute;
+    bottom: 210px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(560px, 82vw);
+    text-align: center;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text);
+    min-height: 24px;
+  }
+
+  .estado {
+    position: absolute;
+    bottom: 160px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    color: var(--gold);
+  }
+
+  .hint {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .caja-texto {
+    position: absolute;
+    bottom: 78px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(420px, 86vw);
+    display: flex;
+    gap: 8px;
+  }
+
+  .caja-texto input {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 10px 16px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 13px;
+    outline: none;
+  }
+
+  .caja-texto input:focus {
+    border-color: var(--amber);
+  }
+
+  .caja-texto button {
+    background: var(--amber);
+    color: #1a1200;
+    border: none;
+    border-radius: 20px;
+    padding: 0 18px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .selector-voz {
+    position: absolute;
+    top: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+  }
+
+  .selector-voz select {
+    background: var(--panel);
+    color: var(--text-dim);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 11px;
+    outline: none;
+    max-width: 220px;
+  }
+
+  .boton-activacion {
+    background: var(--panel);
+    color: var(--text-dim);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+    margin-left: 8px;
+  }
+
+  .boton-activacion.activo {
+    background: var(--amber);
+    color: #001625;
+    border-color: var(--amber);
+  }
+</style>
+</head>
+<body>
+
+<div class="stage">
+
+  <div class="historial mono">
+    <div class="titulo">TRANSCRIPCION</div>
+    <div id="historial"></div>
+  </div>
+
+  <div class="stats mono">
+    <div>SESION<span class="valor" id="statSesion">00:00</span></div>
+    <div>INTERCAMBIOS<span class="valor" id="statIntercambios">00</span></div>
+    <div>LATENCIA<span class="valor" id="statLatencia">--</span></div>
+  </div>
+
+  <div class="selector-voz">
+    <select id="selectorVoz"></select>
+    <button id="botonActivacionVoz" class="boton-activacion">Activar por voz</button>
+  </div>
+
+  <div class="orb-wrap" id="orb">
+    <canvas id="orbCanvas" width="320" height="320"></canvas>
+  </div>
+
+  <div class="respuesta" id="respuesta"></div>
+  <div class="estado mono" id="estado">EN ESPERA</div>
+  <div class="caja-texto">
+    <input type="text" id="inputTexto" placeholder="Escríbele a Celestian..." autocomplete="off">
+    <button id="botonEnviar">Enviar</button>
+  </div>
+  <div class="hint">Mantén pulsada la barra espaciadora o el núcleo para hablar</div>
+  <audio id="audioRespuesta" style="display:none"></audio>
+
+</div>
+
+<script>
+const canvas = document.getElementById("orbCanvas");
+const ctx = canvas.getContext("2d");
+const cx = 160, cy = 160;
+
+let estadoActual = "idle"; // idle | listening | thinking | speaking
+let t = 0;
+
+function dibujarOrbe() {
+  t += 1;
+  ctx.clearRect(0, 0, 320, 320);
+
+  const pulso = estadoActual === "idle" ? 0.5 : 1;
+  const velocidad = estadoActual === "thinking" ? 0.12 : 0.04;
+  const radioBase = 46 + Math.sin(t * 0.03) * (4 * pulso);
+
+  // nucleo
+  const grad = ctx.createRadialGradient(cx, cy, 4, cx, cy, radioBase);
+  grad.addColorStop(0, "#eaf6ff");
+  grad.addColorStop(0.4, "#3aa8ff");
+  grad.addColorStop(1, "rgba(58,168,255,0)");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radioBase, 0, Math.PI * 2);
+  ctx.fill();
+
+  // anillos de particulas
+  const anillos = [
+    { radio: 90, particulas: 40, color: "rgba(94,200,255,0.55)" },
+    { radio: 120, particulas: 60, color: "rgba(58,168,255,0.35)" },
+    { radio: 145, particulas: 26, color: "rgba(242,240,235,0.25)" },
+  ];
+
+  anillos.forEach((anillo, i) => {
+    const dir = i % 2 === 0 ? 1 : -1;
+    const angInicial = t * velocidad * dir * (i === 2 ? 0.5 : 1);
+    for (let p = 0; p < anillo.particulas; p++) {
+      const ang = angInicial + (p / anillo.particulas) * Math.PI * 2;
+      const jitter = estadoActual === "listening" ? Math.sin(t * 0.2 + p) * 4 : 0;
+      const r = anillo.radio + jitter;
+      const x = cx + Math.cos(ang) * r;
+      const y = cy + Math.sin(ang) * r * 0.94;
+      ctx.beginPath();
+      ctx.arc(x, y, i === 0 ? 1.6 : 1.1, 0, Math.PI * 2);
+      ctx.fillStyle = anillo.color;
+      ctx.fill();
+    }
+  });
+
+  requestAnimationFrame(dibujarOrbe);
+}
+dibujarOrbe();
+
+function setEstado(nombre, etiqueta) {
+  estadoActual = nombre;
+  document.getElementById("estado").textContent = etiqueta;
+}
+
+// --- Estadisticas ---
+let inicioSesion = Date.now();
+let intercambios = 0;
+
+setInterval(() => {
+  const segs = Math.floor((Date.now() - inicioSesion) / 1000);
+  const m = String(Math.floor(segs / 60)).padStart(2, "0");
+  const s = String(segs % 60).padStart(2, "0");
+  document.getElementById("statSesion").textContent = `${m}:${s}`;
+}, 1000);
+
+function agregarHistorial(rol, texto) {
+  const cont = document.getElementById("historial");
+  const linea = document.createElement("div");
+  linea.className = "linea";
+  linea.textContent = (rol === "user" ? "TU: " : "IA: ") + texto;
+  cont.prepend(linea);
+  while (cont.children.length > 8) cont.removeChild(cont.lastChild);
+}
+
+// --- Grabacion de audio (push to talk) ---
+let mediaRecorder;
+let chunks = [];
+let grabando = false;
+
+async function iniciarGrabacion() {
+  if (grabando) return;
+  grabando = true;
+  setEstado("listening", "ESCUCHANDO");
+
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(stream);
+  chunks = [];
+
+  mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach((track) => track.stop());
+    const blob = new Blob(chunks, { type: "audio/webm" });
+    await enviarAudio(blob);
+  };
+
+  mediaRecorder.start();
+}
+
+function detenerGrabacion() {
+  if (!grabando || !mediaRecorder) return;
+  grabando = false;
+  mediaRecorder.stop();
+}
+
+async function enviarAudio(blob) {
+  setEstado("thinking", "PENSANDO");
+  document.getElementById("respuesta").textContent = "";
+
+  const formData = new FormData();
+  formData.append("audio", blob, "audio.webm");
+  formData.append("voice", document.getElementById("selectorVoz").value);
+
+  try {
+    const resp = await fetch("/api/talk", { method: "POST", body: formData });
+    const data = await resp.json();
+    manejarRespuesta(data);
+  } catch (err) {
+    setEstado("idle", "EN ESPERA");
+    console.error(err);
+  }
+}
+
+async function enviarTexto() {
+  const input = document.getElementById("inputTexto");
+  const texto = input.value.trim();
+  if (!texto) return;
+  input.value = "";
+  await enviarTextoDirecto(texto);
+}
+
+async function enviarTextoDirecto(texto) {
+  setEstado("thinking", "PENSANDO");
+  document.getElementById("respuesta").textContent = "";
+
+  try {
+    const resp = await fetch("/api/text", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: texto,
+        voice: document.getElementById("selectorVoz").value,
+      }),
+    });
+    const data = await resp.json();
+    manejarRespuesta(data);
+  } catch (err) {
+    setEstado("idle", "EN ESPERA");
+    console.error(err);
+  }
+}
+
+function manejarRespuesta(data) {
+  if (data.error) {
+    setEstado("idle", "EN ESPERA");
+    return;
+  }
+
+  agregarHistorial("user", data.transcript);
+  agregarHistorial("assistant", data.reply);
+  document.getElementById("respuesta").textContent = data.reply;
+
+  intercambios += 1;
+  document.getElementById("statIntercambios").textContent =
+    String(intercambios).padStart(2, "0");
+  document.getElementById("statLatencia").textContent = data.latency_ms + " MS";
+
+  if (data.open_url) {
+    window.open(data.open_url, "_blank");
+  }
+
+  hablar(data.audio_base64);
+}
+
+document.getElementById("botonEnviar").addEventListener("click", enviarTexto);
+document.getElementById("inputTexto").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") enviarTexto();
+});
+
+function hablar(base64) {
+  if (!base64) {
+    setEstado("idle", "EN ESPERA");
+    return;
+  }
+  setEstado("speaking", "HABLANDO");
+  hablandoAhora = true;
+  pausarEscuchaContinua();
+
+  const audio = document.getElementById("audioRespuesta");
+  audio.src = "data:audio/mp3;base64," + base64;
+  audio.onended = () => {
+    setEstado("idle", "EN ESPERA");
+    hablandoAhora = false;
+    reanudarEscuchaContinua();
+  };
+  audio.play();
+}
+
+// --- Activacion por voz (palabra clave "Celestian") ---
+const PALABRA_ACTIVACION = "celestian";
+let reconocimientoContinuo = null;
+let activacionPorVoz = false;
+let hablandoAhora = false;
+
+function crearReconocimiento() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  const rec = new SpeechRecognition();
+  rec.lang = "es-ES";
+  rec.continuous = true;
+  rec.interimResults = false;
+
+  rec.onresult = (event) => {
+    const ultimo = event.results[event.results.length - 1];
+    const texto = ultimo[0].transcript.trim().toLowerCase();
+    const idx = texto.indexOf(PALABRA_ACTIVACION);
+    if (idx === -1) return;
+
+    const comando = texto.slice(idx + PALABRA_ACTIVACION.length).trim();
+    if (comando) {
+      enviarTextoDirecto(comando);
+    } else {
+      setEstado("listening", "TE ESCUCHO");
+    }
+  };
+
+  rec.onend = () => {
+    if (!activacionPorVoz || hablandoAhora) return;
+    setTimeout(() => {
+      if (activacionPorVoz && !hablandoAhora) {
+        try { reconocimientoContinuo.start(); } catch (e) {}
+      }
+    }, 300);
+  };
+
+  rec.onerror = (e) => {
+    // "no-speech" pasa constantemente cuando no hay nadie hablando, es normal.
+    // onend se dispara despues de cada error y se encarga de reiniciar.
+    if (e.error !== "no-speech" && e.error !== "aborted") {
+      console.error("Reconocimiento:", e.error);
+    }
+  };
+
+  return rec;
+}
+
+function pausarEscuchaContinua() {
+  if (reconocimientoContinuo) {
+    try { reconocimientoContinuo.stop(); } catch (e) {}
+  }
+}
+
+function reanudarEscuchaContinua() {
+  if (activacionPorVoz && reconocimientoContinuo) {
+    try { reconocimientoContinuo.start(); } catch (e) {}
+  }
+}
+
+document.getElementById("botonActivacionVoz").addEventListener("click", () => {
+  activacionPorVoz = !activacionPorVoz;
+  const boton = document.getElementById("botonActivacionVoz");
+
+  if (activacionPorVoz) {
+    reconocimientoContinuo = crearReconocimiento();
+    if (!reconocimientoContinuo) {
+      alert("Tu navegador no soporta activación por voz. Usa Chrome u Opera.");
+      activacionPorVoz = false;
+      return;
+    }
+    reconocimientoContinuo.start();
+    boton.textContent = 'Escuchando "Celestian"...';
+    boton.classList.add("activo");
+    setEstado("idle", "EN ESPERA (di 'Celestian')");
+  } else {
+    pausarEscuchaContinua();
+    boton.textContent = "Activar por voz";
+    boton.classList.remove("activo");
+    setEstado("idle", "EN ESPERA");
+  }
+});
+
+// --- Voces disponibles ---
+async function cargarVoces() {
+  const resp = await fetch("/api/voces");
+  const voces = await resp.json();
+  const select = document.getElementById("selectorVoz");
+  select.innerHTML = "";
+  voces.forEach((voz) => {
+    const opt = document.createElement("option");
+    opt.value = voz.id;
+    opt.textContent = voz.nombre;
+    select.appendChild(opt);
+  });
+}
+cargarVoces();
+
+// --- Controles: barra espaciadora y click en la esfera ---
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space" && !e.repeat && e.target.tagName !== "INPUT") {
+    e.preventDefault();
+    iniciarGrabacion();
+  }
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code === "Space" && e.target.tagName !== "INPUT") {
+    e.preventDefault();
+    detenerGrabacion();
+  }
+});
+
+const orb = document.getElementById("orb");
+orb.addEventListener("mousedown", iniciarGrabacion);
+orb.addEventListener("mouseup", detenerGrabacion);
+orb.addEventListener("mouseleave", detenerGrabacion);
+
+orb.addEventListener("touchstart", (e) => {
+  e.preventDefault();
+  iniciarGrabacion();
+}, { passive: false });
+orb.addEventListener("touchend", (e) => {
+  e.preventDefault();
+  detenerGrabacion();
+}, { passive: false });
+
+// --- Registro de la PWA ---
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(console.error);
+  });
+}
+</script>
+</body>
+</html>

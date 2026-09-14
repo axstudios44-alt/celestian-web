@@ -362,6 +362,8 @@ async function enviarAudio(blob) {
   const formData = new FormData();
   formData.append("audio", blob, "audio.webm");
   formData.append("voice", document.getElementById("selectorVoz").value);
+  const imagen = capturarFramePantalla();
+  if (imagen) formData.append("image", imagen);
 
   try {
     const resp = await fetch("/api/talk", { method: "POST", body: formData });
@@ -392,6 +394,7 @@ async function enviarTextoDirecto(texto) {
       body: JSON.stringify({
         text: texto,
         voice: document.getElementById("selectorVoz").value,
+        image: capturarFramePantalla(),
       }),
     });
     const data = await resp.json();
@@ -532,11 +535,9 @@ document.getElementById("botonActivacionVoz").addEventListener("click", () => {
   }
 });
 
-// --- Ver la pantalla (comentarios proactivos) ---
+// --- Ver la pantalla (bajo demanda, no comenta solo) ---
 let viendoPantalla = false;
 let videoPantalla = null;
-let intervaloVision = null;
-const SEGUNDOS_ENTRE_CAPTURAS = 20;
 
 async function activarVerPantalla() {
   try {
@@ -546,11 +547,7 @@ async function activarVerPantalla() {
     videoPantalla.muted = true;
     await videoPantalla.play();
 
-    stream.getVideoTracks()[0].onended = () => {
-      desactivarVerPantalla();
-    };
-
-    intervaloVision = setInterval(capturarYAnalizarPantalla, SEGUNDOS_ENTRE_CAPTURAS * 1000);
+    stream.getVideoTracks()[0].onended = () => desactivarVerPantalla();
     viendoPantalla = true;
   } catch (err) {
     console.error("No se pudo compartir pantalla:", err);
@@ -560,7 +557,6 @@ async function activarVerPantalla() {
 
 function desactivarVerPantalla() {
   viendoPantalla = false;
-  if (intervaloVision) clearInterval(intervaloVision);
   if (videoPantalla && videoPantalla.srcObject) {
     videoPantalla.srcObject.getTracks().forEach((t) => t.stop());
   }
@@ -571,34 +567,14 @@ function desactivarVerPantalla() {
   boton.classList.remove("activo");
 }
 
-async function capturarYAnalizarPantalla() {
-  if (!videoPantalla || estadoActual === "thinking" || hablandoAhora) return;
-
+function capturarFramePantalla() {
+  if (!viendoPantalla || !videoPantalla || !videoPantalla.videoWidth) return null;
   const canvas = document.createElement("canvas");
   const escala = 800 / videoPantalla.videoWidth;
   canvas.width = 800;
   canvas.height = videoPantalla.videoHeight * escala;
   canvas.getContext("2d").drawImage(videoPantalla, 0, 0, canvas.width, canvas.height);
-  const imagenBase64 = canvas.toDataURL("image/jpeg", 0.6).split(",")[1];
-
-  try {
-    const resp = await fetch("/api/vision", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image: imagenBase64,
-        voice: document.getElementById("selectorVoz").value,
-      }),
-    });
-    const data = await resp.json();
-    if (data.comentario) {
-      agregarHistorial("assistant", data.comentario);
-      document.getElementById("respuesta").textContent = data.comentario;
-      hablar(data.audio_base64);
-    }
-  } catch (err) {
-    console.error("Error analizando pantalla:", err);
-  }
+  return canvas.toDataURL("image/jpeg", 0.6).split(",")[1];
 }
 
 document.getElementById("botonVerPantalla").addEventListener("click", async () => {
@@ -606,7 +582,7 @@ document.getElementById("botonVerPantalla").addEventListener("click", async () =
   if (!viendoPantalla) {
     await activarVerPantalla();
     if (viendoPantalla) {
-      boton.textContent = "Viendo tu pantalla...";
+      boton.textContent = "Viendo tu pantalla";
       boton.classList.add("activo");
     }
   } else {

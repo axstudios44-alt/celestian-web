@@ -33,7 +33,9 @@ SYSTEM_PROMPT = (
     "Eres Celestian, un asistente personal por voz. Respondes siempre en "
     "espanol, de forma breve y natural, como en una conversacion hablada "
     "(evita listas largas o formato de texto, ya que tu respuesta se lee "
-    "en voz alta). "
+    "en voz alta). Si en el mensaje del usuario se incluye una imagen de "
+    "su pantalla, usala para responder mejor a lo que te pregunte sobre "
+    "ella. "
     "Si el usuario te pide abrir una pagina conocida sin buscar nada "
     "especifico (YouTube, Google, Gmail, etc.), responde confirmando y "
     "agrega al final, en una linea aparte, exactamente: "
@@ -142,69 +144,30 @@ def voces_disponibles():
 
 
 VISION_MODEL = "qwen/qwen3.6-27b"
-
-PROMPT_VISION = (
-    "Eres Celestian, un asistente que observa la pantalla del usuario en "
-    "tiempo real para ayudarlo de forma proactiva. Se te muestra una "
-    "captura de su pantalla en este momento. Si notas algo realmente util "
-    "para comentar (un error visible, algo en lo que claramente necesita "
-    "ayuda, informacion relevante que deberia saber), responde con un "
-    "comentario breve y natural en espanol, como se diria en voz alta. "
-    "Si no hay nada que valga la pena comentar, responde UNICAMENTE con "
-    "la palabra: NADA"
-)
+MODELO_TEXTO = "openai/gpt-oss-20b"
 
 
-@app.route("/api/vision", methods=["POST"])
-def vision():
-    inicio = time.time()
-    datos = request.json or {}
-    imagen_base64 = datos.get("image")
-    voz = datos.get("voice", VOCES_DISPONIBLES[0]["id"])
-    if not imagen_base64:
-        return jsonify({"error": "Falta la imagen"}), 400
-
-    respuesta = groq_client.chat.completions.create(
-        model=VISION_MODEL,
-        messages=[
-            {"role": "system", "content": PROMPT_VISION},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Esto es lo que hay en mi pantalla ahora mismo."},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{imagen_base64}"},
-                    },
-                ],
-            },
-        ],
-        temperature=0.7,
-        max_completion_tokens=200,
-    )
-    texto = respuesta.choices[0].message.content.strip()
-
-    if texto.upper().startswith("NADA"):
-        return jsonify({"comentario": None})
-
-    guardar_mensaje("assistant", f"[Sobre tu pantalla] {texto}")
-    audio_base64 = generar_audio_base64(texto, voz)
-    latencia_ms = int((time.time() - inicio) * 1000)
-
-    return jsonify({
-        "comentario": texto,
-        "audio_base64": audio_base64,
-        "latency_ms": latencia_ms,
-    })
-
-
-def procesar_mensaje(texto_usuario, inicio, voz):
+def procesar_mensaje(texto_usuario, inicio, voz, imagen_base64=None):
     guardar_mensaje("user", texto_usuario)
     historial = obtener_historial()
     mensajes = [{"role": "system", "content": SYSTEM_PROMPT}] + historial
 
+    modelo = MODELO_TEXTO
+    if imagen_base64:
+        modelo = VISION_MODEL
+        mensajes[-1] = {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": texto_usuario},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{imagen_base64}"},
+                },
+            ],
+        }
+
     respuesta = groq_client.chat.completions.create(
-        model="openai/gpt-oss-20b",
+        model=modelo,
         messages=mensajes,
     )
     texto_respuesta = respuesta.choices[0].message.content
@@ -229,6 +192,7 @@ def talk():
     inicio = time.time()
     audio = request.files["audio"]
     voz = request.form.get("voice", VOCES_DISPONIBLES[0]["id"])
+    imagen_base64 = request.form.get("image")
 
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
         audio.save(tmp.name)
@@ -245,7 +209,7 @@ def talk():
     if not texto_usuario:
         return jsonify({"error": "No se entendio el audio"}), 400
 
-    return jsonify(procesar_mensaje(texto_usuario, inicio, voz))
+    return jsonify(procesar_mensaje(texto_usuario, inicio, voz, imagen_base64))
 
 
 @app.route("/api/text", methods=["POST"])
@@ -254,10 +218,11 @@ def text():
     datos = request.json or {}
     texto_usuario = datos.get("text", "").strip()
     voz = datos.get("voice", VOCES_DISPONIBLES[0]["id"])
+    imagen_base64 = datos.get("image")
     if not texto_usuario:
         return jsonify({"error": "Mensaje vacio"}), 400
 
-    return jsonify(procesar_mensaje(texto_usuario, inicio, voz))
+    return jsonify(procesar_mensaje(texto_usuario, inicio, voz, imagen_base64))
 
 
 if __name__ == "__main__":

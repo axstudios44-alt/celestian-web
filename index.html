@@ -229,6 +229,7 @@
   <div class="selector-voz">
     <select id="selectorVoz"></select>
     <button id="botonActivacionVoz" class="boton-activacion">Activar por voz</button>
+    <button id="botonVerPantalla" class="boton-activacion">Ver mi pantalla</button>
   </div>
 
   <div class="orb-wrap" id="orb">
@@ -238,7 +239,7 @@
   <div class="respuesta" id="respuesta"></div>
   <div class="estado mono" id="estado">EN ESPERA</div>
   <div class="caja-texto">
-    <input type="text" id="inputTexto" placeholder="Escríbele a Jarvis..." autocomplete="off">
+    <input type="text" id="inputTexto" placeholder="Escríbele a Celestian..." autocomplete="off">
     <button id="botonEnviar">Enviar</button>
   </div>
   <div class="hint">Mantén pulsada la barra espaciadora o el núcleo para hablar</div>
@@ -477,12 +478,21 @@ function crearReconocimiento() {
   };
 
   rec.onend = () => {
-    if (activacionPorVoz && !hablandoAhora) {
-      try { rec.start(); } catch (e) {}
-    }
+    if (!activacionPorVoz || hablandoAhora) return;
+    setTimeout(() => {
+      if (activacionPorVoz && !hablandoAhora) {
+        try { reconocimientoContinuo.start(); } catch (e) {}
+      }
+    }, 300);
   };
 
-  rec.onerror = (e) => console.error("Reconocimiento:", e.error);
+  rec.onerror = (e) => {
+    // "no-speech" pasa constantemente cuando no hay nadie hablando, es normal.
+    // onend se dispara despues de cada error y se encarga de reiniciar.
+    if (e.error !== "no-speech" && e.error !== "aborted") {
+      console.error("Reconocimiento:", e.error);
+    }
+  };
 
   return rec;
 }
@@ -519,6 +529,88 @@ document.getElementById("botonActivacionVoz").addEventListener("click", () => {
     boton.textContent = "Activar por voz";
     boton.classList.remove("activo");
     setEstado("idle", "EN ESPERA");
+  }
+});
+
+// --- Ver la pantalla (comentarios proactivos) ---
+let viendoPantalla = false;
+let videoPantalla = null;
+let intervaloVision = null;
+const SEGUNDOS_ENTRE_CAPTURAS = 20;
+
+async function activarVerPantalla() {
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+    videoPantalla = document.createElement("video");
+    videoPantalla.srcObject = stream;
+    videoPantalla.muted = true;
+    await videoPantalla.play();
+
+    stream.getVideoTracks()[0].onended = () => {
+      desactivarVerPantalla();
+    };
+
+    intervaloVision = setInterval(capturarYAnalizarPantalla, SEGUNDOS_ENTRE_CAPTURAS * 1000);
+    viendoPantalla = true;
+  } catch (err) {
+    console.error("No se pudo compartir pantalla:", err);
+    viendoPantalla = false;
+  }
+}
+
+function desactivarVerPantalla() {
+  viendoPantalla = false;
+  if (intervaloVision) clearInterval(intervaloVision);
+  if (videoPantalla && videoPantalla.srcObject) {
+    videoPantalla.srcObject.getTracks().forEach((t) => t.stop());
+  }
+  videoPantalla = null;
+
+  const boton = document.getElementById("botonVerPantalla");
+  boton.textContent = "Ver mi pantalla";
+  boton.classList.remove("activo");
+}
+
+async function capturarYAnalizarPantalla() {
+  if (!videoPantalla || estadoActual === "thinking" || hablandoAhora) return;
+
+  const canvas = document.createElement("canvas");
+  const escala = 800 / videoPantalla.videoWidth;
+  canvas.width = 800;
+  canvas.height = videoPantalla.videoHeight * escala;
+  canvas.getContext("2d").drawImage(videoPantalla, 0, 0, canvas.width, canvas.height);
+  const imagenBase64 = canvas.toDataURL("image/jpeg", 0.6).split(",")[1];
+
+  try {
+    const resp = await fetch("/api/vision", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: imagenBase64,
+        voice: document.getElementById("selectorVoz").value,
+      }),
+    });
+    const data = await resp.json();
+    if (data.comentario) {
+      agregarHistorial("assistant", data.comentario);
+      document.getElementById("respuesta").textContent = data.comentario;
+      hablar(data.audio_base64);
+    }
+  } catch (err) {
+    console.error("Error analizando pantalla:", err);
+  }
+}
+
+document.getElementById("botonVerPantalla").addEventListener("click", async () => {
+  const boton = document.getElementById("botonVerPantalla");
+  if (!viendoPantalla) {
+    await activarVerPantalla();
+    if (viendoPantalla) {
+      boton.textContent = "Viendo tu pantalla...";
+      boton.classList.add("activo");
+    }
+  } else {
+    desactivarVerPantalla();
   }
 });
 

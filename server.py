@@ -141,6 +141,63 @@ def voces_disponibles():
     return jsonify(VOCES_DISPONIBLES)
 
 
+VISION_MODEL = "qwen/qwen3.6-27b"
+
+PROMPT_VISION = (
+    "Eres Celestian, un asistente que observa la pantalla del usuario en "
+    "tiempo real para ayudarlo de forma proactiva. Se te muestra una "
+    "captura de su pantalla en este momento. Si notas algo realmente util "
+    "para comentar (un error visible, algo en lo que claramente necesita "
+    "ayuda, informacion relevante que deberia saber), responde con un "
+    "comentario breve y natural en espanol, como se diria en voz alta. "
+    "Si no hay nada que valga la pena comentar, responde UNICAMENTE con "
+    "la palabra: NADA"
+)
+
+
+@app.route("/api/vision", methods=["POST"])
+def vision():
+    inicio = time.time()
+    datos = request.json or {}
+    imagen_base64 = datos.get("image")
+    voz = datos.get("voice", VOCES_DISPONIBLES[0]["id"])
+    if not imagen_base64:
+        return jsonify({"error": "Falta la imagen"}), 400
+
+    respuesta = groq_client.chat.completions.create(
+        model=VISION_MODEL,
+        messages=[
+            {"role": "system", "content": PROMPT_VISION},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Esto es lo que hay en mi pantalla ahora mismo."},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{imagen_base64}"},
+                    },
+                ],
+            },
+        ],
+        temperature=0.7,
+        max_completion_tokens=200,
+    )
+    texto = respuesta.choices[0].message.content.strip()
+
+    if texto.upper().startswith("NADA"):
+        return jsonify({"comentario": None})
+
+    guardar_mensaje("assistant", f"[Sobre tu pantalla] {texto}")
+    audio_base64 = generar_audio_base64(texto, voz)
+    latencia_ms = int((time.time() - inicio) * 1000)
+
+    return jsonify({
+        "comentario": texto,
+        "audio_base64": audio_base64,
+        "latency_ms": latencia_ms,
+    })
+
+
 def procesar_mensaje(texto_usuario, inicio, voz):
     guardar_mensaje("user", texto_usuario)
     historial = obtener_historial()
